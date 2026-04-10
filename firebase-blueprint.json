@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "AppRecord": {
+      "title": "AppRecord",
+      "description": "Represents an uploaded Android application",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "The title of the app"
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the app"
+        },
+        "image_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to the app's icon or image"
+        },
+        "apk_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to download the APK file"
+        },
+        "created_at": {
+          "type": "number",
+          "description": "Timestamp when the app was uploaded"
+        },
+        "owner_uid": {
+          "type": "string",
+          "description": "The UID of the user who uploaded the app"
+        }
+      },
+      "required": ["title", "description", "image_url", "apk_url", "created_at", "owner_uid"]
+    }
+  },
+  "firestore": {
+    "/apps/{appId}": {
+      "schema": { "$ref": "#/entities/AppRecord" },
+      "description": "Collection of uploaded apps"
+    }
+  }
+}
