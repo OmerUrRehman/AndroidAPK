@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Upload, Trash2 } from 'lucide-react';
 import { AppRecord } from '../types';
+import { supabase } from '../supabase';
 
 interface AdminPanelProps {
   apps: AppRecord[];
@@ -9,6 +10,8 @@ interface AdminPanelProps {
 }
 
 export function AdminPanel({ apps, onAppAdded, onAppDeleted }: AdminPanelProps) {
+  const [password, setPassword] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState('');
 
@@ -16,6 +19,16 @@ export function AdminPanel({ apps, onAppAdded, onAppDeleted }: AdminPanelProps) 
   const [description, setDescription] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [apkFile, setApkFile] = useState<File | null>(null);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === import.meta.env.VITE_ADMIN_PASSWORD) {
+      setIsAuthenticated(true);
+      setError('');
+    } else {
+      setError('Incorrect password');
+    }
+  };
 
   const handleUpload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,21 +40,30 @@ export function AdminPanel({ apps, onAppAdded, onAppDeleted }: AdminPanelProps) 
     setIsUploading(true);
     setError('');
 
-    const formData = new FormData();
-    formData.append('title', title);
-    formData.append('description', description);
-    formData.append('image', imageFile);
-    formData.append('apk', apkFile);
-
     try {
-      const res = await fetch('/api/apps', {
-        method: 'POST',
-        body: formData,
-      });
+      // Upload Image to Supabase Storage
+      const imageExt = imageFile.name.split('.').pop();
+      const imagePath = `images/${Date.now()}.${imageExt}`;
+      const { error: imageError } = await supabase.storage.from('vault').upload(imagePath, imageFile);
+      if (imageError) throw imageError;
+      const { data: imageData } = supabase.storage.from('vault').getPublicUrl(imagePath);
 
-      if (!res.ok) {
-        throw new Error('Upload failed.');
-      }
+      // Upload APK to Supabase Storage
+      const apkExt = apkFile.name.split('.').pop();
+      const apkPath = `apks/${Date.now()}.${apkExt}`;
+      const { error: apkError } = await supabase.storage.from('vault').upload(apkPath, apkFile);
+      if (apkError) throw apkError;
+      const { data: apkData } = supabase.storage.from('vault').getPublicUrl(apkPath);
+
+      // Save to Supabase Database
+      const { error: dbError } = await supabase.from('apps').insert([{
+        title,
+        description,
+        image_url: imageData.publicUrl,
+        apk_url: apkData.publicUrl
+      }]);
+      
+      if (dbError) throw dbError;
 
       setTitle('');
       setDescription('');
@@ -49,7 +71,6 @@ export function AdminPanel({ apps, onAppAdded, onAppDeleted }: AdminPanelProps) 
       setApkFile(null);
       onAppAdded();
       
-      // Reset file inputs
       const fileInputs = document.querySelectorAll('input[type="file"]') as NodeListOf<HTMLInputElement>;
       fileInputs.forEach(input => input.value = '');
       
@@ -65,13 +86,17 @@ export function AdminPanel({ apps, onAppAdded, onAppDeleted }: AdminPanelProps) 
     if (!confirm('Are you sure you want to delete this app?')) return;
     
     try {
-      const res = await fetch(`/api/apps/${app.id}`, {
-        method: 'DELETE',
-      });
+      // Delete from Database
+      const { error: dbError } = await supabase.from('apps').delete().eq('id', app.id);
+      if (dbError) throw dbError;
 
-      if (!res.ok) {
-        throw new Error('Delete failed.');
-      }
+      // Extract paths from URLs to delete from storage
+      // URL format: .../storage/v1/object/public/vault/images/123.png
+      const imagePath = app.image_url.split('/vault/')[1];
+      const apkPath = app.apk_url.split('/vault/')[1];
+
+      if (imagePath) await supabase.storage.from('vault').remove([imagePath]);
+      if (apkPath) await supabase.storage.from('vault').remove([apkPath]);
 
       onAppDeleted();
     } catch (err: any) {
@@ -80,11 +105,43 @@ export function AdminPanel({ apps, onAppAdded, onAppDeleted }: AdminPanelProps) 
     }
   };
 
+  if (!isAuthenticated) {
+    return (
+      <div className="mx-auto max-w-md rounded-2xl border border-white/10 bg-white/5 p-8">
+        <h2 className="mb-6 font-serif text-2xl text-white">Admin Access</h2>
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <input
+              type="password"
+              placeholder="Enter Admin Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-lg border border-white/20 bg-transparent px-4 py-3 text-white placeholder:text-white/40 focus:border-white focus:outline-none"
+            />
+          </div>
+          {error && <p className="text-sm text-red-400">{error}</p>}
+          <button
+            type="submit"
+            className="w-full rounded-full bg-white px-4 py-3 font-medium text-black transition-opacity hover:opacity-90"
+          >
+            Authenticate
+          </button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-12">
       <div className="rounded-2xl border border-white/10 bg-white/5 p-8">
         <div className="mb-8 flex items-center justify-between">
           <h2 className="font-serif text-2xl text-white">Upload New App</h2>
+          <button
+            onClick={() => setIsAuthenticated(false)}
+            className="text-sm text-white/60 hover:text-white"
+          >
+            Logout
+          </button>
         </div>
 
         {error && (

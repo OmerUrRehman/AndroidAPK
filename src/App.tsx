@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { AppCard } from './components/AppCard';
 import { AdminPanel } from './components/AdminPanel';
 import { AppRecord } from './types';
-import { Settings, LayoutGrid } from 'lucide-react';
+import { Settings, LayoutGrid, AlertCircle } from 'lucide-react';
+import { supabase, hasSupabaseConfig } from './supabase';
 
 export default function App() {
   const [apps, setApps] = useState<AppRecord[]>([]);
@@ -28,10 +29,19 @@ export default function App() {
   };
 
   const fetchApps = async () => {
+    if (!hasSupabaseConfig) {
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const res = await fetch('/api/apps');
-      const data = await res.json();
-      setApps(data);
+      const { data, error } = await supabase
+        .from('apps')
+        .select('*')
+        .order('created_at', { ascending: false });
+        
+      if (error) throw error;
+      setApps(data || []);
     } catch (error) {
       console.error('Failed to fetch apps:', error);
     } finally {
@@ -42,6 +52,26 @@ export default function App() {
   useEffect(() => {
     fetchApps();
   }, []);
+
+  if (!hasSupabaseConfig) {
+    return (
+      <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center p-6">
+        <div className="max-w-md w-full rounded-2xl border border-white/10 bg-white/5 p-8 text-center">
+          <div className="mx-auto mb-6 flex h-12 w-12 items-center justify-center rounded-full bg-red-500/20 text-red-400">
+            <AlertCircle className="h-6 w-6" />
+          </div>
+          <h2 className="mb-4 font-serif text-2xl text-white">Setup Required</h2>
+          <p className="text-white/60 mb-6 leading-relaxed">
+            Please add your Supabase keys to your environment variables to continue.
+          </p>
+          <div className="text-left bg-black/50 p-4 rounded-lg text-sm font-mono text-white/80 overflow-x-auto whitespace-nowrap border border-white/10">
+            VITE_SUPABASE_URL=...<br/>
+            VITE_SUPABASE_ANON_KEY=...
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#050505] text-white selection:bg-white/30">
